@@ -1,19 +1,23 @@
 import { useState } from "react";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
+import { auth } from "../firebase";
 import { useTheme } from "../ThemeContext";
 
-interface AuthPageProps {
-  onLogin: (email: string) => void;
-}
-
-export default function AuthPage({ onLogin }: AuthPageProps) {
+export default function AuthPage() {
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!email || !password) {
@@ -28,7 +32,40 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
       setError("Password must be at least 6 characters.");
       return;
     }
-    onLogin(email);
+    setLoading(true);
+    try {
+      if (isSignup) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+      // App.tsx onAuthStateChanged handles the redirect
+    } catch (err: any) {
+      const msg: Record<string, string> = {
+        "auth/user-not-found": "No account found with that email.",
+        "auth/wrong-password": "Incorrect password.",
+        "auth/email-already-in-use": "An account with that email already exists.",
+        "auth/invalid-email": "Invalid email address.",
+        "auth/invalid-credential": "Incorrect email or password.",
+      };
+      setError(msg[err.code] ?? "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (err: any) {
+      if (err.code !== "auth/popup-closed-by-user") {
+        setError("Google sign-in failed. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const inputCls =
@@ -69,8 +106,9 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
 
         {/* Google — primary CTA (fastest auth path) */}
         <button
-          onClick={() => onLogin("google-user@gmail.com")}
-          className="w-full flex items-center justify-center gap-2.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 text-neutral-700 dark:text-neutral-200 text-sm font-medium py-3 rounded-lg transition-colors focus:outline-none shadow-sm"
+          onClick={handleGoogle}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 text-neutral-700 dark:text-neutral-200 text-sm font-medium py-3 rounded-lg transition-colors focus:outline-none shadow-sm disabled:opacity-50"
         >
           <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
@@ -147,9 +185,10 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
             )}
             <button
               type="submit"
-              className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors focus:outline-none"
+              disabled={loading}
+              className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors focus:outline-none disabled:opacity-50"
             >
-              {isSignup ? "Create Account" : "Sign In"}
+              {loading ? "Please wait…" : isSignup ? "Create Account" : "Sign In"}
             </button>
           </form>
         </div>
