@@ -1,41 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { auth } from "./firebase";
 import { useTheme } from "./ThemeContext";
 import AuthPage from "./pages/AuthPage";
 import BuilderPage from "./pages/BuilderPage";
 import AnalysisPage from "./pages/AnalysisPage";
 import BenchmarkPage from "./pages/BenchmarkPage";
 
-type Page = "login" | "builder" | "analysis" | "benchmark";
-
-interface MockUser {
-  email: string;
-  uid: string;
-}
+type Page = "builder" | "analysis" | "benchmark";
 
 export default function App() {
-  const [page, setPage] = useState<Page>("login");
-  const [user, setUser] = useState<MockUser | null>(null);
+  const [page, setPage] = useState<Page>("builder");
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
-  const handleLogin = (email: string) => {
-    setUser({ email, uid: "mock-uid-" + Date.now() });
-    setPage("builder");
-  };
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+    });
+    return unsub;
+  }, []);
 
-  const handleLogout = () => {
-    setUser(null);
-    setPage("login");
-  };
+  const handleLogout = () => signOut(auth);
 
   const nav = (p: Page) => {
     setPage(p);
     setMobileOpen(false);
   };
 
-  if (!user || page === "login") {
-    return <AuthPage onLogin={handleLogin} />;
-  }
+  if (!authReady) return null;
+  if (!user) return <AuthPage />;
 
   const navItems: { key: Page; label: string }[] = [
     { key: "builder", label: "Builder" },

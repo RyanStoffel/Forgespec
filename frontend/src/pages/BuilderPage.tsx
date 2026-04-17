@@ -1,17 +1,27 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { auth } from "../firebase";
 
-/* ─── Data ─── */
+function gatewayBase(): string | null {
+  const base = process.env.REACT_APP_GATEWAY_URL?.replace(/\/$/, "") ?? "";
+  return base || null;
+}
+
+/* ─── Category config ─── */
 
 const CATEGORIES = ["CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"] as const;
 type Category = (typeof CATEGORIES)[number];
 
-interface Part {
-  id: string;
-  name: string;
-  category: Category;
-  price: number;
-  specs: string;
-}
+// Maps UI category labels to Firestore partType values
+const CATEGORY_TO_PART_TYPE: Record<Category, string> = {
+  CPU: "cpu",
+  GPU: "gpu",
+  Motherboard: "motherboard",
+  RAM: "memory",
+  Storage: "storage",
+  PSU: "psu",
+  Case: "case",
+  Cooler: "cpu_cooler",
+};
 
 const CATEGORY_ICONS: Record<Category, string> = {
   CPU: "M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2M19 9h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z",
@@ -24,34 +34,88 @@ const CATEGORY_ICONS: Record<Category, string> = {
   Cooler: "M12 8a4 4 0 100 8 4 4 0 000-8zm-2-4v2m4-2v2m6 4h-2m2 4h-2M4 10h2M4 14h2m2 6v-2m4 2v-2",
 };
 
-const MOCK_PARTS: Part[] = [
-  { id: "cpu-1", name: "AMD Ryzen 9 7950X", category: "CPU", price: 549, specs: "16C/32T · 4.5 GHz base · 5.7 GHz boost · 170W" },
-  { id: "cpu-2", name: "Intel Core i9-14900K", category: "CPU", price: 569, specs: "24C/32T · 3.2 GHz base · 6.0 GHz boost · 125W" },
-  { id: "cpu-3", name: "AMD Ryzen 7 7800X3D", category: "CPU", price: 349, specs: "8C/16T · 4.2 GHz base · 5.0 GHz boost · 120W" },
-  { id: "cpu-4", name: "Intel Core i7-14700K", category: "CPU", price: 384, specs: "20C/28T · 3.4 GHz base · 5.6 GHz boost · 125W" },
-  { id: "gpu-1", name: "NVIDIA RTX 4090", category: "GPU", price: 1599, specs: "24 GB GDDR6X · 2520 MHz boost · 450W" },
-  { id: "gpu-2", name: "NVIDIA RTX 4070 Ti Super", category: "GPU", price: 799, specs: "16 GB GDDR6X · 2610 MHz boost · 285W" },
-  { id: "gpu-3", name: "AMD RX 7900 XTX", category: "GPU", price: 949, specs: "24 GB GDDR6 · 2500 MHz boost · 355W" },
-  { id: "gpu-4", name: "NVIDIA RTX 4060 Ti", category: "GPU", price: 399, specs: "8 GB GDDR6 · 2535 MHz boost · 160W" },
-  { id: "mb-1", name: "ASUS ROG Crosshair X670E Hero", category: "Motherboard", price: 699, specs: "AM5 · DDR5 · PCIe 5.0 · Wi-Fi 6E" },
-  { id: "mb-2", name: "MSI MAG Z790 Tomahawk", category: "Motherboard", price: 259, specs: "LGA 1700 · DDR5 · PCIe 5.0 · 2.5G LAN" },
-  { id: "mb-3", name: "Gigabyte B650 Aorus Elite AX", category: "Motherboard", price: 179, specs: "AM5 · DDR5 · PCIe 4.0 · Wi-Fi 6E" },
-  { id: "ram-1", name: "G.Skill Trident Z5 RGB 32 GB", category: "RAM", price: 124, specs: "2×16 GB · DDR5-6000 · CL30 · 1.35V" },
-  { id: "ram-2", name: "Corsair Vengeance 64 GB", category: "RAM", price: 209, specs: "2×32 GB · DDR5-5600 · CL36 · 1.25V" },
-  { id: "ram-3", name: "Kingston Fury Beast 32 GB", category: "RAM", price: 97, specs: "2×16 GB · DDR5-5200 · CL36 · 1.25V" },
-  { id: "st-1", name: "Samsung 990 Pro 2 TB", category: "Storage", price: 159, specs: "NVMe M.2 · 7450 / 6900 MB/s · TLC" },
-  { id: "st-2", name: "WD Black SN850X 1 TB", category: "Storage", price: 89, specs: "NVMe M.2 · 7300 / 6300 MB/s · TLC" },
-  { id: "st-3", name: "Crucial T700 2 TB", category: "Storage", price: 224, specs: "NVMe M.2 PCIe 5.0 · 12400 / 11800 MB/s" },
-  { id: "psu-1", name: "Corsair RM1000x", category: "PSU", price: 189, specs: "1000W · 80+ Gold · Fully Modular · ATX 3.0" },
-  { id: "psu-2", name: "EVGA SuperNOVA 850 G7", category: "PSU", price: 149, specs: "850W · 80+ Gold · Fully Modular" },
-  { id: "psu-3", name: "Seasonic PRIME TX-1000", category: "PSU", price: 299, specs: "1000W · 80+ Titanium · Fully Modular" },
-  { id: "case-1", name: "Lian Li O11 Dynamic EVO", category: "Case", price: 169, specs: "Mid Tower · Tempered Glass · ATX" },
-  { id: "case-2", name: "Fractal Design Torrent", category: "Case", price: 189, specs: "Mid Tower · Open Airflow · ATX" },
-  { id: "case-3", name: "NZXT H7 Flow", category: "Case", price: 129, specs: "Mid Tower · Mesh Front · ATX" },
-  { id: "cool-1", name: "Noctua NH-D15", category: "Cooler", price: 109, specs: "Air · Dual Tower · 250W TDP" },
-  { id: "cool-2", name: "Corsair iCUE H150i Elite", category: "Cooler", price: 169, specs: "AIO 360 mm · LCD Display" },
-  { id: "cool-3", name: "Arctic Liquid Freezer II 280", category: "Cooler", price: 94, specs: "AIO 280 mm · VRM Fan" },
-];
+/* ─── Types ─── */
+
+interface Part {
+  id: string;
+  name: string;
+  category: Category;
+  price: number;
+  specs: string;
+  partType: string;
+}
+
+/* ─── Specs formatter ─── */
+
+// Builds a human-readable specs string from raw Firestore fields per part type
+function buildSpecs(doc: Record<string, any>, partType: string): string {
+  switch (partType) {
+    case "cpu": {
+      const cores = doc.core_count ? `${doc.core_count}C` : null;
+      const clocks =
+        doc.core_clock && doc.boost_clock
+          ? `${doc.core_clock} / ${doc.boost_clock} GHz`
+          : doc.boost_clock
+          ? `${doc.boost_clock} GHz boost`
+          : null;
+      const tdp = doc.tdp ? `${doc.tdp}W` : null;
+      return [cores, clocks, tdp].filter(Boolean).join(" · ");
+    }
+    case "gpu": {
+      const mem = doc.memory ? `${doc.memory} GB` : null;
+      const boost = doc.boost_clock ? `${doc.boost_clock} MHz boost` : null;
+      const chipset = doc.chipset || null;
+      return [mem, boost, chipset].filter(Boolean).join(" · ");
+    }
+    case "motherboard": {
+      const socket = doc.socket || null;
+      const ff = doc.form_factor || null;
+      const maxMem = doc.max_memory ? `${doc.max_memory} GB max RAM` : null;
+      return [socket, ff, maxMem].filter(Boolean).join(" · ");
+    }
+    case "memory": {
+      const speed =
+        Array.isArray(doc.speed) && doc.speed.length === 2
+          ? `DDR${doc.speed[0]}-${doc.speed[1]}`
+          : null;
+      const modules =
+        Array.isArray(doc.modules) && doc.modules.length === 2
+          ? `${doc.modules[0]}×${doc.modules[1]} GB`
+          : null;
+      const cas = doc.cas_latency ? `CL${doc.cas_latency}` : null;
+      return [speed, modules, cas].filter(Boolean).join(" · ");
+    }
+    case "storage": {
+      const cap = doc.capacity ? `${doc.capacity >= 1000 ? `${doc.capacity / 1000} TB` : `${doc.capacity} GB`}` : null;
+      const type = doc.type || null;
+      const iface = doc.interface || null;
+      return [cap, type, iface].filter(Boolean).join(" · ");
+    }
+    case "psu": {
+      const watts = doc.wattage ? `${doc.wattage}W` : null;
+      const eff = doc.efficiency ? doc.efficiency.charAt(0).toUpperCase() + doc.efficiency.slice(1) : null;
+      const mod = doc.modular ? `${doc.modular} Modular` : null;
+      return [watts, eff, mod].filter(Boolean).join(" · ");
+    }
+    case "case": {
+      const type = doc.type || null;
+      const panel = doc.side_panel ? `${doc.side_panel} Panel` : null;
+      return [type, panel].filter(Boolean).join(" · ");
+    }
+    case "cpu_cooler": {
+      const size = doc.size ? `${doc.size} mm` : "Air";
+      const rpm = Array.isArray(doc.rpm)
+        ? `${doc.rpm[0]}–${doc.rpm[1]} RPM`
+        : doc.rpm
+        ? `${doc.rpm} RPM`
+        : null;
+      const noise = doc.noise_level ? `${doc.noise_level} dB` : null;
+      return [size, rpm, noise].filter(Boolean).join(" · ");
+    }
+    default:
+      return "";
+  }
+}
 
 /* ─── Component ─── */
 
@@ -59,22 +123,70 @@ export default function BuilderPage() {
   const [expandedCat, setExpandedCat] = useState<Category | null>("CPU");
   const [search, setSearch] = useState("");
   const [build, setBuild] = useState<Partial<Record<Category, Part>>>({});
+
+  // Cached parts per category, fetched once on first expand
+  const [partsByCategory, setPartsByCategory] = useState<Partial<Record<Category, Part[]>>>({});
+  const [loadingCat, setLoadingCat] = useState<Category | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [finalizeSuccess, setFinalizeSuccess] = useState<{
+    buildId?: string;
+    status?: string;
+    message?: string;
+  } | null>(null);
+
   const rowRefs = useRef<Partial<Record<Category, HTMLDivElement | null>>>({});
 
   const totalPrice = Object.values(build).reduce((s, p) => s + (p?.price ?? 0), 0);
   const filledCount = Object.keys(build).length;
 
+  /* ─── API fetch ─── */
+
+  async function fetchCategory(cat: Category) {
+    if (partsByCategory[cat]) return; // already cached
+    setLoadingCat(cat);
+    setFetchError(null);
+    try {
+      const base = gatewayBase();
+      if (!base) throw new Error("REACT_APP_GATEWAY_URL is not set");
+      const partType = CATEGORY_TO_PART_TYPE[cat];
+      const token = await auth.currentUser!.getIdToken();
+      const url = `${base}/parts?category=${encodeURIComponent(partType)}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const parts: Part[] = data.parts.map((doc: any) => ({
+        id: doc.id,
+        name: doc.name ?? "Unknown",
+        category: cat,
+        price: doc.price ?? 0,
+        specs: buildSpecs(doc, partType),
+        partType,
+      }));
+      setPartsByCategory((prev) => ({ ...prev, [cat]: parts }));
+    } catch (err: any) {
+      setFetchError(`Failed to load ${cat} parts: ${err.message}`);
+    } finally {
+      setLoadingCat(null);
+    }
+  }
+
+  /* ─── Handlers ─── */
+
   const selectPart = (part: Part) => {
     setBuild((prev) => ({ ...prev, [part.category]: part }));
-    // Auto-advance: after picking, jump to the next empty category
     const idx = CATEGORIES.indexOf(part.category);
     const next = CATEGORIES.slice(idx + 1).find((c) => !build[c] && c !== part.category);
     setTimeout(() => {
       if (next) {
         setExpandedCat(next);
+        fetchCategory(next);
         rowRefs.current[next]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } else {
-        setExpandedCat(null); // all done
+        setExpandedCat(null);
       }
       setSearch("");
     }, 150);
@@ -90,21 +202,99 @@ export default function BuilderPage() {
   };
 
   const toggleCategory = (cat: Category) => {
-    setExpandedCat((prev) => (prev === cat ? null : cat));
+    const opening = expandedCat !== cat;
+    setExpandedCat(opening ? cat : null);
     setSearch("");
+    if (opening) fetchCategory(cat);
   };
 
-  // Filter parts for expanded category
-  const filteredParts =
-    expandedCat
-      ? MOCK_PARTS.filter(
-          (p) =>
-            p.category === expandedCat &&
-            (search === "" ||
-              p.name.toLowerCase().includes(search.toLowerCase()) ||
-              p.specs.toLowerCase().includes(search.toLowerCase()))
-        )
-      : [];
+  async function finalizeBuild() {
+    const base = gatewayBase();
+    if (!base) {
+      setFinalizeError("REACT_APP_GATEWAY_URL is not set. Add it to your .env file.");
+      return;
+    }
+    if (filledCount !== CATEGORIES.length) return;
+
+    setFinalizing(true);
+    setFinalizeError(null);
+    setFinalizeSuccess(null);
+    try {
+      const token = await auth.currentUser!.getIdToken();
+      const parts: Record<
+        string,
+        { id: string; name: string; price: number; partType: string; specs: string }
+      > = {};
+      for (const cat of CATEGORIES) {
+        const p = build[cat];
+        if (p) {
+          parts[p.partType] = {
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            partType: p.partType,
+            specs: p.specs,
+          };
+        }
+      }
+      const res = await fetch(`${base}/builds`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ parts, totalPrice }),
+      });
+      if (!res.ok) {
+        const raw = await res.text();
+        let detail = `HTTP ${res.status}`;
+        try {
+          const errBody = JSON.parse(raw) as { error?: string; message?: string };
+          if (errBody?.error || errBody?.message) {
+            detail = errBody.error ?? errBody.message ?? detail;
+          } else if (raw) {
+            detail = raw.slice(0, 200);
+          }
+        } catch {
+          if (raw) detail = raw.slice(0, 200);
+        }
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      setFinalizeSuccess(data);
+      try {
+        sessionStorage.setItem(
+          "forgespec_last_build_finalize",
+          JSON.stringify({
+            at: Date.now(),
+            buildId: data.buildId,
+            status: data.status,
+            totalPrice,
+            partCount: Object.keys(parts).length,
+          })
+        );
+      } catch {
+        /* ignore quota / private mode */
+      }
+    } catch (err: unknown) {
+      setFinalizeError(err instanceof Error ? err.message : "Failed to finalize build");
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  /* ─── Filtered parts for the open category ─── */
+
+  const cachedParts = expandedCat ? (partsByCategory[expandedCat] ?? []) : [];
+  const filteredParts = search.trim() === ""
+    ? cachedParts
+    : cachedParts.filter(
+        (p) =>
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.specs.toLowerCase().includes(search.toLowerCase())
+      );
+
+  /* ─── Render ─── */
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
@@ -115,7 +305,8 @@ export default function BuilderPage() {
             Build Your PC
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
-            Select a component for each slot. {filledCount < CATEGORIES.length
+            Select a component for each slot.{" "}
+            {filledCount < CATEGORIES.length
               ? `${CATEGORIES.length - filledCount} remaining.`
               : "All slots filled — ready to finalize!"}
           </p>
@@ -137,7 +328,8 @@ export default function BuilderPage() {
               Parts
             </p>
             <p className="text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">
-              {filledCount}<span className="text-sm font-normal text-neutral-400">/{CATEGORIES.length}</span>
+              {filledCount}
+              <span className="text-sm font-normal text-neutral-400">/{CATEGORIES.length}</span>
             </p>
           </div>
         </div>
@@ -151,12 +343,45 @@ export default function BuilderPage() {
         />
       </div>
 
-      {/* ── Category rows (PCPartPicker-style checklist) ── */}
+      {/* Global fetch error */}
+      {fetchError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 text-sm text-red-600 dark:text-red-400">
+          {fetchError}
+        </div>
+      )}
+
+      {finalizeError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 text-sm text-red-600 dark:text-red-400">
+          {finalizeError}
+        </div>
+      )}
+
+      {finalizeSuccess && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-900/40 text-sm text-emerald-800 dark:text-emerald-200">
+          <p className="font-semibold">Build submitted</p>
+          <p className="mt-1 text-emerald-700 dark:text-emerald-300/90">
+            {finalizeSuccess.message ?? "Analysis pipeline started."}
+            {finalizeSuccess.buildId && (
+              <>
+                {" "}
+                <span className="text-xs font-mono opacity-90">ID: {finalizeSuccess.buildId}</span>
+              </>
+            )}
+          </p>
+          <p className="mt-2 text-xs text-emerald-600/90 dark:text-emerald-400/80">
+            Open <strong className="font-medium">Analysis</strong> for status — full real-time updates ship with the Firestore listener in the polish milestone.
+          </p>
+        </div>
+      )}
+
+      {/* ── Category rows ── */}
       <div className="space-y-2">
         {CATEGORIES.map((cat, i) => {
           const part = build[cat];
           const isExpanded = expandedCat === cat;
-          const isNext = !part && expandedCat === null && CATEGORIES.findIndex((c) => !build[c]) === i;
+          const isLoading = loadingCat === cat;
+          const isNext =
+            !part && expandedCat === null && CATEGORIES.findIndex((c) => !build[c]) === i;
 
           return (
             <div
@@ -172,7 +397,7 @@ export default function BuilderPage() {
                   : "border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/30"
               }`}
             >
-              {/* Row header — always visible */}
+              {/* Row header */}
               <button
                 onClick={() => toggleCategory(cat)}
                 className="w-full flex items-center gap-3 sm:gap-4 px-4 py-3.5 text-left focus:outline-none group"
@@ -201,11 +426,7 @@ export default function BuilderPage() {
                 {/* Category name + selection */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-semibold ${
-                      part
-                        ? "text-neutral-900 dark:text-neutral-100"
-                        : "text-neutral-600 dark:text-neutral-400"
-                    }`}>
+                    <span className={`text-sm font-semibold ${part ? "text-neutral-900 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-400"}`}>
                       {cat}
                     </span>
                     {!part && isNext && !isExpanded && (
@@ -232,7 +453,7 @@ export default function BuilderPage() {
                   {part && (
                     <>
                       <span className="text-sm font-semibold tabular-nums text-neutral-800 dark:text-neutral-200">
-                        ${part.price}
+                        ${part.price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                       </span>
                       <button
                         onClick={(e) => removePart(cat, e)}
@@ -278,13 +499,21 @@ export default function BuilderPage() {
                     />
                   </div>
 
-                  {/* Parts list */}
-                  {filteredParts.length === 0 ? (
+                  {/* Loading state */}
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-10 gap-2 text-sm text-neutral-400 dark:text-neutral-500">
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                      Loading {cat} parts…
+                    </div>
+                  ) : filteredParts.length === 0 ? (
                     <p className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-6">
-                      No {cat} parts match "{search}"
+                      {search ? `No ${cat} parts match "${search}"` : `No ${cat} parts found`}
                     </p>
                   ) : (
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                       {filteredParts.map((p) => {
                         const sel = build[cat]?.id === p.id;
                         return (
@@ -312,9 +541,7 @@ export default function BuilderPage() {
 
                             {/* Part info */}
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate ${
-                                sel ? "text-orange-700 dark:text-orange-300" : "text-neutral-800 dark:text-neutral-200"
-                              }`}>
+                              <p className={`text-sm font-medium truncate ${sel ? "text-orange-700 dark:text-orange-300" : "text-neutral-800 dark:text-neutral-200"}`}>
                                 {p.name}
                               </p>
                               <p className="text-xs text-neutral-400 dark:text-neutral-500 truncate mt-0.5">
@@ -324,7 +551,7 @@ export default function BuilderPage() {
 
                             {/* Price */}
                             <span className="text-sm font-semibold tabular-nums text-neutral-700 dark:text-neutral-300 shrink-0">
-                              ${p.price}
+                              ${p.price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                             </span>
                           </button>
                         );
@@ -353,16 +580,18 @@ export default function BuilderPage() {
           </p>
         </div>
         <button
-          disabled={filledCount === 0}
+          type="button"
+          onClick={() => void finalizeBuild()}
+          disabled={filledCount !== CATEGORIES.length || finalizing}
           className={`px-8 py-2.5 text-sm font-semibold rounded-lg transition-all focus:outline-none whitespace-nowrap ${
-            filledCount === CATEGORIES.length
+            filledCount === CATEGORIES.length && !finalizing
               ? "bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white shadow-sm"
-              : filledCount > 0
-              ? "bg-orange-500/80 hover:bg-orange-500 text-white"
+              : filledCount === CATEGORIES.length && finalizing
+              ? "bg-orange-500/70 text-white cursor-wait"
               : "bg-neutral-100 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-600 cursor-not-allowed"
           }`}
         >
-          Finalize Build →
+          {finalizing ? "Submitting…" : "Finalize Build →"}
         </button>
       </div>
     </div>

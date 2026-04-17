@@ -1,4 +1,29 @@
+import { useState, useEffect } from "react";
+
+const FINALIZE_STORAGE_KEY = "forgespec_last_build_finalize";
+
+type PendingFinalize = {
+  at: number;
+  buildId?: string;
+  status?: string;
+  totalPrice?: number;
+  partCount?: number;
+};
+
 export default function AnalysisPage() {
+  const [pending, setPending] = useState<PendingFinalize | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(FINALIZE_STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw) as PendingFinalize;
+      if (data?.at && data?.buildId) setPending(data);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Header */}
@@ -34,6 +59,21 @@ export default function AnalysisPage() {
         />
       </div>
 
+      {pending && (
+        <div className="mb-8 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30 px-5 py-4">
+          <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+            Build queued for analysis
+          </p>
+          <p className="text-xs text-emerald-800/90 dark:text-emerald-200/80 mt-1 font-mono">
+            {pending.buildId}
+          </p>
+          <p className="text-xs text-emerald-700/85 dark:text-emerald-300/75 mt-2">
+            Status: {pending.status ?? "Processing"}. Detailed reports will load here via Firestore once
+            the AI services are fully wired (polish milestone).
+          </p>
+        </div>
+      )}
+
       {/* Empty state — clear CTA */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 sm:p-14 text-center">
         {/* Icon */}
@@ -44,12 +84,21 @@ export default function AnalysisPage() {
         </div>
 
         <h2 className="text-base font-semibold text-neutral-800 dark:text-neutral-200 mb-1.5">
-          No build finalized yet
+          {pending ? "Waiting on AI results" : "No build finalized yet"}
         </h2>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto mb-6 leading-relaxed">
-          Head to the Builder, pick your components, and click
-          <strong className="text-neutral-700 dark:text-neutral-300"> Finalize Build</strong>.
-          Your analysis report will appear here automatically.
+          {pending ? (
+            <>
+              Your build was submitted through the API Gateway. When bottleneck and value reports are
+              available, they will show in this panel.
+            </>
+          ) : (
+            <>
+              Head to the Builder, pick your components, and click
+              <strong className="text-neutral-700 dark:text-neutral-300"> Finalize Build</strong>.
+              Your analysis report will appear here automatically.
+            </>
+          )}
         </p>
 
         {/* Preview of what the output will look like */}
