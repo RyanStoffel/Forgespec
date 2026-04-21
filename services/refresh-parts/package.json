@@ -1,0 +1,23 @@
+{
+  "name": "refresh-parts",
+  "version": "1.0.0",
+  "description": "Nightly Cloud Function to refresh PC parts pricing from external source and upsert to Firestore",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=refreshParts",
+    "test": "mocha"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "@google-cloud/firestore": "^6.8.0",
+    "@google-cloud/secret-manager": "^4.2.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "mocha": "^10.0.0",
+    "chai": "^4.3.0"
+  },
+  "engines": {
+    "node": "18"
+  }
+}
