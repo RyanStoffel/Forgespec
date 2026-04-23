@@ -1,1 +1,12 @@
-{}
+{
+  "name": "value-optimizer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@google-cloud/firestore": "^7.9.0",
+    "@google-cloud/secret-manager": "^5.1.0",
+    "@google-ai/generative-ai": "^0.3.0"
+  }
+}
