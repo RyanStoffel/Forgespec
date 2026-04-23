@@ -1,7 +1,7 @@
 const express = require("express");
 const { Firestore } = require("@google-cloud/firestore");
 const { SecretManagerServiceClient } = require("@google-cloud/secret-manager");
-const { GoogleGenerativeAI } = require("@google-ai/generative-ai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 app.use(express.json());
@@ -66,7 +66,7 @@ app.post("/", async (req, res) => {
 
     // Fetch Gemini AI client
     const gemini = await initializeGemini();
-    const model = gemini.getGenerativeModel({ model: "gemini-pro" });
+    const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // Prepare analysis prompt
     const prompt = `Analyze this PC build for performance bottlenecks. Build details:
