@@ -17,7 +17,7 @@ async function initializeGemini() {
   if (geminiClient) return geminiClient;
   try {
     const apiKey = await getSecret("google-ai-api-key");
-    geminiClient = new GoogleGenerativeAI({ apiKey });
+    geminiClient = new GoogleGenerativeAI(apiKey);
     return geminiClient;
   } catch (err) {
     console.error("Failed to initialize Gemini:", err);
@@ -29,7 +29,7 @@ async function initializeGemini() {
 async function getSecret(secretName) {
   const name = `projects/${PROJECT_ID}/secrets/${secretName}/versions/latest`;
   const [version] = await secretClient.accessSecretVersion({ name });
-  return version.payload.data.toString("utf8");
+  return version.payload.data.toString("utf8").trim();
 }
 
 // POST / - Receive Pub/Sub push message
