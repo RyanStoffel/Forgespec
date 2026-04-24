@@ -16,13 +16,20 @@ const pubsub = new PubSub({ projectId: PROJECT_ID });
 // Helper: Extract userId from Firebase JWT token
 function extractUserIdFromToken(authHeader) {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log("No Authorization header or invalid format");
     return null;
   }
   try {
     const token = authHeader.substring(7);
     const decoded = jwt.decode(token);
-    return decoded?.sub || decoded?.uid;
+    console.log("Decoded token:", JSON.stringify(decoded, null, 2));
+    const userId = decoded?.sub || decoded?.uid || decoded?.user_id;
+    if (!userId) {
+      console.error("Token decoded but no userId found. Token keys:", Object.keys(decoded || {}));
+    }
+    return userId;
   } catch (err) {
+    console.error("Failed to decode token:", err.message);
     return null;
   }
 }
