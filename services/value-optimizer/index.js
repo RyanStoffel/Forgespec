@@ -125,6 +125,9 @@ Respond with a JSON object where keys are part categories and values contain sug
     }
 
     // Write results back to Firestore (add optimization in subcollection)
+    console.log(`Writing value optimization to Firestore for build ${buildId}...`);
+    console.log(`Data to write:`, JSON.stringify({ suggestions: valueOptimization, createdAt: new Date() }, null, 2));
+
     await firestore
       .collection("users")
       .doc(userId)

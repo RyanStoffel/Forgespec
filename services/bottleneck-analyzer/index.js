@@ -115,6 +115,9 @@ Provide a structured JSON analysis with severity levels (LOW, MEDIUM, HIGH) for 
     }
 
     // Write results back to Firestore (add assessment in subcollection)
+    console.log(`Writing bottleneck analysis to Firestore for build ${buildId}...`);
+    console.log(`Data to write:`, JSON.stringify({ analysis: analysisResult, createdAt: new Date() }, null, 2));
+
     await firestore
       .collection("users")
       .doc(userId)

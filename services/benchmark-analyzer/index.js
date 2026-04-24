@@ -161,6 +161,9 @@ Return a JSON object with these metrics and their values.`;
     }
 
     // Write results back to Firestore (add benchmark metrics in build's assessments subcollection if buildId exists)
+    console.log(`Writing benchmark analysis to Firestore for ${benchmarkId}...`);
+    console.log(`Benchmark result:`, JSON.stringify(benchmarkResult, null, 2));
+
     const writePromises = [
       // Always update the benchmark document
       firestore
