@@ -1,149 +1,267 @@
 import { useState, useEffect } from "react";
+import { auth, db } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
 
-const FINALIZE_STORAGE_KEY = "forgespec_last_build_finalize";
+type AssessmentType = "bottleneck" | "optimization";
 
-type PendingFinalize = {
-  at: number;
-  buildId?: string;
-  status?: string;
-  totalPrice?: number;
-  partCount?: number;
-};
+interface AssessmentData {
+  analysis?: any;
+  suggestions?: any;
+  createdAt?: any;
+}
+
+interface Build {
+  id: string;
+  parts: any;
+  totalPrice: number;
+  bottleneckAnalysis?: AssessmentData;
+  valueOptimization?: AssessmentData;
+}
 
 export default function AnalysisPage() {
-  const [pending, setPending] = useState<PendingFinalize | null>(null);
+  const [builds, setBuilds] = useState<Build[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBuildId, setSelectedBuildId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AssessmentType>("bottleneck");
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(FINALIZE_STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw) as PendingFinalize;
-      if (data?.at && data?.buildId) setPending(data);
-    } catch {
-      /* ignore */
-    }
+    fetchBuilds();
   }, []);
 
+  async function fetchBuilds() {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const buildsRef = collection(db, "users", user.uid, "builds");
+      const snapshot = await getDocs(buildsRef);
+
+      const buildsList: Build[] = [];
+
+      for (const doc of snapshot.docs) {
+        const buildData = doc.data();
+        const assessmentsRef = collection(doc.ref, "assessments");
+        const assessmentsSnap = await getDocs(assessmentsRef);
+
+        const assessments: Record<string, AssessmentData> = {};
+        assessmentsSnap.docs.forEach((assessDoc) => {
+          assessments[assessDoc.id] = assessDoc.data();
+        });
+
+        buildsList.push({
+          id: doc.id,
+          parts: buildData.parts || [],
+          totalPrice: buildData.totalPrice || 0,
+          bottleneckAnalysis: assessments.bottleneck,
+          valueOptimization: assessments.optimization,
+        });
+      }
+
+      setBuilds(buildsList);
+      if (buildsList.length > 0) {
+        setSelectedBuildId(buildsList[0].id);
+      }
+    } catch (err) {
+      console.error("Error fetching builds:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const selectedBuild = builds.find((b) => b.id === selectedBuildId);
+
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Header */}
       <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100 tracking-tight">
         Build Analysis
       </h1>
       <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 mb-8 max-w-lg">
-        Once you finalize a build, the AI reviews your component choices and
-        returns two reports.
+        AI-powered analysis of your PC builds. Get bottleneck detection and value optimization suggestions.
       </p>
 
-      {/* How it works — numbered steps */}
-      <div className="grid sm:grid-cols-2 gap-4 mb-10">
-        <StepCard
-          step={1}
-          title="Bottleneck Detection"
-          description="Gemini inspects your CPU, GPU, RAM, and storage combination and flags mismatches — e.g., a budget GPU paired with a top-tier CPU — with severity ratings."
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-orange-500" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+      {loading ? (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 text-center">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading your builds...</p>
+        </div>
+      ) : builds.length === 0 ? (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 sm:p-14 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-neutral-100 dark:bg-neutral-800 mb-5">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-neutral-400 dark:text-neutral-500" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
             </svg>
-          }
-        />
-        <StepCard
-          step={2}
-          title="Value Optimization"
-          description="The optimizer compares your picks to the full catalog and suggests swaps that deliver more performance per dollar at your budget level."
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-orange-500" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-        />
-      </div>
+          </div>
+          <h2 className="text-base font-semibold text-neutral-800 dark:text-neutral-200 mb-1.5">
+            No builds yet
+          </h2>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto">
+            Head to the Builder, create and finalize a build. Once analyzed, it will appear here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid lg:grid-cols-4 gap-6">
+          {/* Builds list */}
+          <div className="lg:col-span-1">
+            <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-neutral-200 dark:border-neutral-800">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Your Builds</p>
+              </div>
+              <div className="divide-y divide-neutral-200 dark:divide-neutral-800 max-h-96 overflow-y-auto">
+                {builds.map((build) => (
+                  <button
+                    key={build.id}
+                    onClick={() => setSelectedBuildId(build.id)}
+                    className={`w-full text-left px-4 py-3 transition-colors ${
+                      selectedBuildId === build.id
+                        ? "bg-orange-50/50 dark:bg-orange-500/10"
+                        : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-1 truncate">
+                      {build.id.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      ${build.totalPrice.toFixed(2)}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
-      {pending && (
-        <div className="mb-8 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30 px-5 py-4">
-          <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
-            Build queued for analysis
-          </p>
-          <p className="text-xs text-emerald-800/90 dark:text-emerald-200/80 mt-1 font-mono">
-            {pending.buildId}
-          </p>
-          <p className="text-xs text-emerald-700/85 dark:text-emerald-300/75 mt-2">
-            Status: {pending.status ?? "Processing"}. Detailed reports will load here via Firestore once
-            the AI services are fully wired (polish milestone).
-          </p>
+          {/* Analysis view */}
+          <div className="lg:col-span-3">
+            {selectedBuild ? (
+              <div className="space-y-4">
+                {/* Tab toggle */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActiveTab("bottleneck")}
+                    className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors ${
+                      activeTab === "bottleneck"
+                        ? "bg-orange-500 text-white"
+                        : "bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                    }`}
+                  >
+                    Bottleneck Detection
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("optimization")}
+                    className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors ${
+                      activeTab === "optimization"
+                        ? "bg-orange-500 text-white"
+                        : "bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                    }`}
+                  >
+                    Price Optimization
+                  </button>
+                </div>
+
+                {/* Content */}
+                {activeTab === "bottleneck" ? (
+                  <BottleneckView analysis={selectedBuild.bottleneckAnalysis} />
+                ) : (
+                  <OptimizationView optimization={selectedBuild.valueOptimization} />
+                )}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 text-center">
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">Select a build to view analysis</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Empty state — clear CTA */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 sm:p-14 text-center">
-        {/* Icon */}
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-neutral-100 dark:bg-neutral-800 mb-5">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-neutral-400 dark:text-neutral-500" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+function BottleneckView({ analysis }: { analysis?: AssessmentData }) {
+  if (!analysis) {
+    return (
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 text-center">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Analysis pending... Check back soon!
+        </p>
+      </div>
+    );
+  }
+
+  const data = analysis.analysis || {};
+
+  return (
+    <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+      <div className="p-6 border-b border-neutral-200 dark:border-neutral-800">
+        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-orange-500" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
-        </div>
-
-        <h2 className="text-base font-semibold text-neutral-800 dark:text-neutral-200 mb-1.5">
-          {pending ? "Waiting on AI results" : "No build finalized yet"}
-        </h2>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto mb-6 leading-relaxed">
-          {pending ? (
-            <>
-              Your build was submitted through the API Gateway. When bottleneck and value reports are
-              available, they will show in this panel.
-            </>
-          ) : (
-            <>
-              Head to the Builder, pick your components, and click
-              <strong className="text-neutral-700 dark:text-neutral-300"> Finalize Build</strong>.
-              Your analysis report will appear here automatically.
-            </>
-          )}
-        </p>
-
-        {/* Preview of what the output will look like */}
-        <div className="max-w-xs mx-auto space-y-2 mb-6">
-          <div className="h-4 rounded bg-neutral-100 dark:bg-neutral-800 w-full" />
-          <div className="h-4 rounded bg-neutral-100 dark:bg-neutral-800 w-4/5" />
-          <div className="h-4 rounded bg-neutral-100 dark:bg-neutral-800 w-3/5" />
-          <div className="h-8 rounded bg-orange-100 dark:bg-orange-500/10 w-full mt-3" />
-        </div>
-
-        <p className="text-xs text-neutral-400 dark:text-neutral-600">
-          ↑ Your bottleneck &amp; value reports will render here
-        </p>
+          Bottleneck Analysis
+        </h3>
+      </div>
+      <div className="p-6 space-y-4">
+        {typeof data === "string" ? (
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">{data}</p>
+        ) : Object.keys(data).length > 0 ? (
+          Object.entries(data).map(([key, value]) => (
+            <div key={key}>
+              <p className="text-xs font-semibold text-orange-500 uppercase tracking-wide mb-1">
+                {key.replace(/_/g, " ")}
+              </p>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value)}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">No detailed analysis available</p>
+        )}
       </div>
     </div>
   );
 }
 
-function StepCard({
-  step,
-  title,
-  description,
-  icon,
-}: {
-  step: number;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 flex flex-col">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-7 h-7 rounded-md bg-orange-100 dark:bg-orange-500/15 flex items-center justify-center shrink-0">
-          {icon}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500">
-            Step {step}
-          </span>
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{title}</h3>
-        </div>
+function OptimizationView({ optimization }: { optimization?: AssessmentData }) {
+  if (!optimization) {
+    return (
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 text-center">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Optimization pending... Check back soon!
+        </p>
       </div>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed flex-1">
-        {description}
-      </p>
+    );
+  }
+
+  const data = optimization.suggestions || {};
+
+  return (
+    <div className="bg-white dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden">
+      <div className="p-6 border-b border-neutral-200 dark:border-neutral-800">
+        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-orange-500" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Price Optimization
+        </h3>
+      </div>
+      <div className="p-6 space-y-4">
+        {typeof data === "string" ? (
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap">{data}</p>
+        ) : Object.keys(data).length > 0 ? (
+          Object.entries(data).map(([key, value]) => (
+            <div key={key}>
+              <p className="text-xs font-semibold text-orange-500 uppercase tracking-wide mb-1">
+                {key.replace(/_/g, " ")}
+              </p>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value)}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">No optimization suggestions available</p>
+        )}
+      </div>
     </div>
   );
 }

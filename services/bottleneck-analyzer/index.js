@@ -64,6 +64,21 @@ app.post("/", async (req, res) => {
 
     const buildData = buildDoc.data();
 
+    // Check if assessment already exists (to avoid duplicate Gemini API calls on retries)
+    const assessmentDoc = await firestore
+      .collection("users")
+      .doc(userId)
+      .collection("builds")
+      .doc(buildId)
+      .collection("assessments")
+      .doc("bottleneck")
+      .get();
+
+    if (assessmentDoc.exists) {
+      console.log(`Bottleneck analysis already exists for build ${buildId}, skipping Gemini call`);
+      return res.status(200).json({ ack: true });
+    }
+
     // Fetch Gemini AI client
     const gemini = await initializeGemini();
     const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });

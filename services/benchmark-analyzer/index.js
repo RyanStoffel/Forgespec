@@ -79,6 +79,21 @@ app.post("/", async (req, res) => {
 
     const benchmarkData = benchmarkDoc.data();
 
+    // Check if assessment already exists (to avoid duplicate Gemini API calls on retries)
+    const benchmarkAssessmentDoc = await firestore
+      .collection("users")
+      .doc(userId)
+      .collection("benchmarks")
+      .doc(benchmarkId)
+      .collection("assessments")
+      .doc("benchmark")
+      .get();
+
+    if (benchmarkAssessmentDoc.exists) {
+      console.log(`Benchmark analysis already exists for ${benchmarkId}, skipping Gemini call`);
+      return res.status(200).json({ ack: true });
+    }
+
     // Download file from Cloud Storage
     const file = storage.bucket(bucket).file(objectName);
     const [fileBuffer] = await file.download();
