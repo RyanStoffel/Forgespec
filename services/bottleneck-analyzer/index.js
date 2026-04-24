@@ -99,16 +99,17 @@ Provide a structured JSON analysis with severity levels (LOW, MEDIUM, HIGH) for 
       analysisResult = { analysis: analysisText };
     }
 
-    // Write results back to Firestore
+    // Write results back to Firestore (add assessment in subcollection)
     await firestore
       .collection("users")
       .doc(userId)
       .collection("builds")
       .doc(buildId)
-      .update({
-        analysisResult,
-        status: "completed",
-        completedAt: new Date(),
+      .collection("assessments")
+      .doc("bottleneck")
+      .set({
+        analysis: analysisResult,
+        createdAt: new Date(),
       });
 
     console.log(`Bottleneck analysis completed for build ${buildId}`);

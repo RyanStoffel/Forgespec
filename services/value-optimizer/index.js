@@ -109,14 +109,17 @@ Respond with a JSON object where keys are part categories and values contain sug
       valueOptimization = { suggestions: optimizationText };
     }
 
-    // Write results back to Firestore
+    // Write results back to Firestore (add optimization in subcollection)
     await firestore
       .collection("users")
       .doc(userId)
       .collection("builds")
       .doc(buildId)
-      .update({
-        valueOptimization,
+      .collection("assessments")
+      .doc("optimization")
+      .set({
+        suggestions: valueOptimization,
+        createdAt: new Date(),
       });
 
     console.log(`Value optimization completed for build ${buildId}`);

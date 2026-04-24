@@ -145,18 +145,39 @@ Return a JSON object with these metrics and their values.`;
       }
     }
 
-    // Write results back to Firestore
-    await firestore
-      .collection("users")
-      .doc(userId)
-      .collection("benchmarks")
-      .doc(benchmarkId)
-      .update({
-        result: benchmarkResult,
-        buildComparison,
-        status: "completed",
-        completedAt: new Date(),
-      });
+    // Write results back to Firestore (add benchmark metrics in build's assessments subcollection if buildId exists)
+    const writePromises = [
+      // Always update the benchmark document
+      firestore
+        .collection("users")
+        .doc(userId)
+        .collection("benchmarks")
+        .doc(benchmarkId)
+        .update({
+          benchmarkMetrics: benchmarkResult,
+          buildComparison,
+        }),
+    ];
+
+    // If benchmark is associated with a build, also write to build's assessments
+    if (benchmarkData.buildId) {
+      writePromises.push(
+        firestore
+          .collection("users")
+          .doc(userId)
+          .collection("builds")
+          .doc(benchmarkData.buildId)
+          .collection("assessments")
+          .doc("benchmark")
+          .set({
+            metrics: benchmarkResult,
+            benchmarkId,
+            createdAt: new Date(),
+          })
+      );
+    }
+
+    await Promise.all(writePromises);
 
     console.log(`Benchmark analysis completed for ${benchmarkId}`);
     res.status(200).json({ ack: true });
