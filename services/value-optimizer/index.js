@@ -73,7 +73,7 @@ app.post("/", async (req, res) => {
 
     // Fetch Gemini AI client
     const gemini = await initializeGemini();
-    const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Prepare optimization prompt
     const prompt = `You are a PC build value optimizer. Analyze this build and suggest better-value alternatives.
