@@ -1,5 +1,5 @@
 const express = require("express");
-const { Firestore } = require("@google-cloud/firestore");
+const { Firestore, FieldValue } = require("@google-cloud/firestore");
 const { SecretManagerServiceClient } = require("@google-cloud/secret-manager");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
@@ -64,6 +64,13 @@ app.post("/", async (req, res) => {
 
     const buildData = buildDoc.data();
 
+    // Gate on requestedAnalyses (legacy builds without the field still run for back-compat).
+    const requested = buildData.requestedAnalyses;
+    if (Array.isArray(requested) && requested.length > 0 && !requested.includes("bottleneck")) {
+      console.log(`Skip: bottleneck not in requestedAnalyses for build ${buildId}`);
+      return res.status(200).json({ ack: true });
+    }
+
     // Check if assessment already exists (to avoid duplicate Gemini API calls on retries)
     const assessmentDoc = await firestore
       .collection("users")
@@ -78,6 +85,13 @@ app.post("/", async (req, res) => {
       console.log(`Bottleneck analysis already exists for build ${buildId}, skipping Gemini call`);
       return res.status(200).json({ ack: true });
     }
+
+    // Pipeline status: analyzing
+    const buildRef = firestore.collection("users").doc(userId).collection("builds").doc(buildId);
+    await buildRef.update({
+      "pipeline.bottleneck.status": "analyzing",
+      "pipeline.bottleneck.startedAt": new Date(),
+    });
 
     // Fetch Gemini AI client
     const gemini = await initializeGemini();
@@ -130,10 +144,37 @@ Provide a structured JSON analysis with severity levels (LOW, MEDIUM, HIGH) for 
         createdAt: new Date(),
       });
 
+    // Pipeline status: complete
+    await buildRef.update({
+      "pipeline.bottleneck.status": "complete",
+      "pipeline.bottleneck.completedAt": new Date(),
+    });
+
+    // Atomic increment of platform-wide counter (safe under concurrent load)
+    await firestore.collection("metrics").doc("global").set(
+      { totalBottleneckAnalyses: FieldValue.increment(1) },
+      { merge: true }
+    );
+
     console.log(`Bottleneck analysis completed for build ${buildId}`);
     res.status(200).json({ ack: true });
   } catch (err) {
     console.error("Error in bottleneck-analyzer:", err);
+    // Best-effort: mark pipeline error so the UI can show what went wrong.
+    try {
+      const msgData = req.body?.message?.data
+        ? JSON.parse(Buffer.from(req.body.message.data, "base64").toString("utf8"))
+        : null;
+      if (msgData?.buildId && msgData?.userId) {
+        await firestore
+          .collection("users").doc(msgData.userId)
+          .collection("builds").doc(msgData.buildId)
+          .update({
+            "pipeline.bottleneck.status": "error",
+            "pipeline.bottleneck.error": String(err.message || err).slice(0, 500),
+          });
+      }
+    } catch {}
     res.status(200).json({ ack: true });
   }
 });

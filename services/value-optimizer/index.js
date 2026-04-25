@@ -1,5 +1,5 @@
 const express = require("express");
-const { Firestore } = require("@google-cloud/firestore");
+const { Firestore, FieldValue } = require("@google-cloud/firestore");
 const { SecretManagerServiceClient } = require("@google-cloud/secret-manager");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
@@ -64,6 +64,13 @@ app.post("/", async (req, res) => {
 
     const buildData = buildDoc.data();
 
+    // Gate on requestedAnalyses (legacy builds without the field still run for back-compat).
+    const requested = buildData.requestedAnalyses;
+    if (Array.isArray(requested) && requested.length > 0 && !requested.includes("optimization")) {
+      console.log(`Skip: optimization not in requestedAnalyses for build ${buildId}`);
+      return res.status(200).json({ ack: true });
+    }
+
     // Check if assessment already exists (to avoid duplicate Gemini API calls on retries)
     const assessmentDoc = await firestore
       .collection("users")
@@ -78,6 +85,13 @@ app.post("/", async (req, res) => {
       console.log(`Value optimization already exists for build ${buildId}, skipping Gemini call`);
       return res.status(200).json({ ack: true });
     }
+
+    // Pipeline status: analyzing
+    const buildRef = firestore.collection("users").doc(userId).collection("builds").doc(buildId);
+    await buildRef.update({
+      "pipeline.optimization.status": "analyzing",
+      "pipeline.optimization.startedAt": new Date(),
+    });
 
     // Fetch parts catalog
     const partsSnapshot = await firestore
@@ -140,10 +154,36 @@ Respond with a JSON object where keys are part categories and values contain sug
         createdAt: new Date(),
       });
 
+    // Pipeline status: complete
+    await buildRef.update({
+      "pipeline.optimization.status": "complete",
+      "pipeline.optimization.completedAt": new Date(),
+    });
+
+    // Atomic increment of platform-wide counter (safe under concurrent load)
+    await firestore.collection("metrics").doc("global").set(
+      { totalValueOptimizations: FieldValue.increment(1) },
+      { merge: true }
+    );
+
     console.log(`Value optimization completed for build ${buildId}`);
     res.status(200).json({ ack: true });
   } catch (err) {
     console.error("Error in value-optimizer:", err);
+    try {
+      const msgData = req.body?.message?.data
+        ? JSON.parse(Buffer.from(req.body.message.data, "base64").toString("utf8"))
+        : null;
+      if (msgData?.buildId && msgData?.userId) {
+        await firestore
+          .collection("users").doc(msgData.userId)
+          .collection("builds").doc(msgData.buildId)
+          .update({
+            "pipeline.optimization.status": "error",
+            "pipeline.optimization.error": String(err.message || err).slice(0, 500),
+          });
+      }
+    } catch {}
     res.status(200).json({ ack: true });
   }
 });

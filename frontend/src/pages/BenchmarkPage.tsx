@@ -1,4 +1,25 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { onSnapshot, doc, collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { auth, db } from "../firebase";
+
+function gatewayBase(): string | null {
+  const base = process.env.REACT_APP_GATEWAY_URL?.replace(/\/$/, "") ?? "";
+  return base || null;
+}
+
+interface BenchmarkDoc {
+  benchmarkId: string;
+  status?: string;
+  buildId?: string;
+  benchmarkMetrics?: any;
+  buildComparison?: any;
+}
+
+interface BuildOption {
+  id: string;
+  buildName?: string;
+  totalPrice?: number;
+}
 
 export default function BenchmarkPage() {
   const [dragOver, setDragOver] = useState(false);
@@ -6,12 +27,60 @@ export default function BenchmarkPage() {
   const [preview, setPreview] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
+  const [selectedBuildId, setSelectedBuildId] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [activeBenchmarkId, setActiveBenchmarkId] = useState<string | null>(null);
+  const [benchmarkDoc, setBenchmarkDoc] = useState<BenchmarkDoc | null>(null);
+
+  // Load user's existing builds for the dropdown.
+  useEffect(() => {
+    async function loadBuilds() {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const buildsRef = collection(db, "users", user.uid, "builds");
+        const q = query(buildsRef, orderBy("createdAt", "desc"), limit(20));
+        const snap = await getDocs(q);
+        const list: BuildOption[] = snap.docs.map((d) => ({
+          id: d.id,
+          buildName: d.data().buildName,
+          totalPrice: d.data().totalPrice,
+        }));
+        setBuilds(list);
+        if (list.length > 0) setSelectedBuildId(list[0].id);
+      } catch (err) {
+        console.error("Failed to load builds:", err);
+      }
+    }
+    loadBuilds();
+  }, []);
+
+  // Real-time listener for the active benchmark (Firestore onSnapshot).
+  useEffect(() => {
+    if (!activeBenchmarkId) return;
+    const user = auth.currentUser;
+    if (!user) return;
+    const ref = doc(db, "users", user.uid, "benchmarks", activeBenchmarkId);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setBenchmarkDoc({ benchmarkId: snap.id, ...(snap.data() as any) });
+      }
+    });
+    return unsub;
+  }, [activeBenchmarkId]);
+
   const handleFile = (file: File) => {
     if (!file.type.startsWith("image/")) return;
     setSelectedFile(file);
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target?.result as string);
     reader.readAsDataURL(file);
+    setUploadError(null);
+    // Reset previous result if user picks a new file.
+    setActiveBenchmarkId(null);
+    setBenchmarkDoc(null);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -24,8 +93,55 @@ export default function BenchmarkPage() {
   const clearFile = () => {
     setSelectedFile(null);
     setPreview(null);
+    setActiveBenchmarkId(null);
+    setBenchmarkDoc(null);
+    setUploadError(null);
     if (inputRef.current) inputRef.current.value = "";
   };
+
+  const upload = async () => {
+    if (!selectedFile) return;
+    if (!selectedBuildId) {
+      setUploadError("Select a build first (finalize one on the Builder page).");
+      return;
+    }
+    const base = gatewayBase();
+    if (!base) {
+      setUploadError("REACT_APP_GATEWAY_URL is not set in frontend/.env");
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const token = await auth.currentUser!.getIdToken();
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const res = await fetch(`${base}/benchmarks?buildId=${encodeURIComponent(selectedBuildId)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Upload failed (${res.status}): ${text}`);
+      }
+      const json = await res.json();
+      setActiveBenchmarkId(json.benchmarkId);
+    } catch (err: any) {
+      setUploadError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Derive a human-readable status from the benchmark doc.
+  const status: "Queued" | "Analyzing" | "Complete" | null = activeBenchmarkId
+    ? benchmarkDoc?.benchmarkMetrics
+      ? "Complete"
+      : benchmarkDoc
+      ? "Analyzing"
+      : "Queued"
+    : null;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -46,7 +162,6 @@ export default function BenchmarkPage() {
           { n: "3", label: "Get results", desc: "Expected vs actual" },
         ].map((s, i) => (
           <div key={s.n} className="flex-1 flex flex-col items-center text-center relative">
-            {/* Connector line */}
             {i > 0 && (
               <div className="absolute top-3 right-1/2 w-full h-px bg-neutral-200 dark:bg-neutral-800 -z-10" />
             )}
@@ -57,6 +172,25 @@ export default function BenchmarkPage() {
             <p className="text-[11px] text-neutral-400 dark:text-neutral-500">{s.desc}</p>
           </div>
         ))}
+      </div>
+
+      {/* Build selector */}
+      <div className="mb-6">
+        <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
+          Associated Build
+        </label>
+        <select
+          value={selectedBuildId}
+          onChange={(e) => setSelectedBuildId(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+        >
+          {builds.length === 0 && <option value="">No builds yet — finalize one on the Builder page</option>}
+          {builds.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.buildName || b.id}{b.totalPrice ? ` ($${b.totalPrice})` : ""}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* ── Upload area ── */}
@@ -134,8 +268,12 @@ export default function BenchmarkPage() {
 
           {/* Action */}
           <div className="px-4 pb-4">
-            <button className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold py-3 rounded-lg transition-colors shadow-sm focus:outline-none">
-              Upload &amp; Analyze
+            <button
+              onClick={upload}
+              disabled={uploading || !selectedBuildId || activeBenchmarkId !== null}
+              className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:bg-neutral-400 disabled:cursor-not-allowed text-white text-sm font-semibold py-3 rounded-lg transition-colors shadow-sm focus:outline-none"
+            >
+              {uploading ? "Uploading..." : activeBenchmarkId ? "Uploaded" : "Upload & Analyze"}
             </button>
             <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-2 text-center">
               Uploads to Cloud Storage · Eventarc triggers benchmark analysis
@@ -144,8 +282,60 @@ export default function BenchmarkPage() {
         </div>
       )}
 
+      {/* ── Error display ── */}
+      {uploadError && (
+        <div className="mt-4 rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">
+          {uploadError}
+        </div>
+      )}
+
+      {/* ── Real-time status + results ── */}
+      {status && (
+        <div className="mt-8 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
+            <div
+              className={`w-2.5 h-2.5 rounded-full ${
+                status === "Complete"
+                  ? "bg-green-500"
+                  : status === "Analyzing"
+                  ? "bg-orange-500 animate-pulse"
+                  : "bg-neutral-400 animate-pulse"
+              }`}
+            />
+            <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+              Status: {status}
+            </span>
+            {activeBenchmarkId && (
+              <span className="ml-auto text-[11px] font-mono text-neutral-400 dark:text-neutral-500 truncate max-w-[180px]">
+                {activeBenchmarkId.slice(0, 8)}…
+              </span>
+            )}
+          </div>
+          {benchmarkDoc?.benchmarkMetrics && (
+            <div className="p-4">
+              <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-2">
+                Extracted Metrics
+              </p>
+              <pre className="text-xs bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg overflow-auto max-h-96 text-neutral-700 dark:text-neutral-300">
+                {JSON.stringify(benchmarkDoc.benchmarkMetrics, null, 2)}
+              </pre>
+            </div>
+          )}
+          {benchmarkDoc?.buildComparison && (
+            <div className="px-4 pb-4">
+              <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-2">
+                Build Comparison
+              </p>
+              <pre className="text-xs bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg overflow-auto max-h-64 text-neutral-700 dark:text-neutral-300">
+                {JSON.stringify(benchmarkDoc.buildComparison, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Results placeholder ── */}
-      {!selectedFile && (
+      {!selectedFile && !status && (
         <div className="mt-10 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/50 p-8 sm:p-12 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-neutral-100 dark:bg-neutral-800 mb-5">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-neutral-400 dark:text-neutral-500" strokeLinecap="round" strokeLinejoin="round">
@@ -159,17 +349,6 @@ export default function BenchmarkPage() {
             Upload a benchmark screenshot above and the AI will compare your
             actual performance against expected scores for your hardware.
           </p>
-
-          {/* Skeleton preview */}
-          <div className="max-w-xs mx-auto mt-6 space-y-2">
-            <div className="flex gap-2">
-              <div className="h-16 flex-1 rounded bg-neutral-100 dark:bg-neutral-800" />
-              <div className="h-16 flex-1 rounded bg-neutral-100 dark:bg-neutral-800" />
-              <div className="h-16 flex-1 rounded bg-neutral-100 dark:bg-neutral-800" />
-            </div>
-            <div className="h-4 rounded bg-neutral-100 dark:bg-neutral-800 w-4/5" />
-            <div className="h-4 rounded bg-neutral-100 dark:bg-neutral-800 w-3/5" />
-          </div>
         </div>
       )}
     </div>

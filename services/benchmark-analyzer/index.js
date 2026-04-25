@@ -1,5 +1,5 @@
 const express = require("express");
-const { Firestore } = require("@google-cloud/firestore");
+const { Firestore, FieldValue } = require("@google-cloud/firestore");
 const { Storage } = require("@google-cloud/storage");
 const { SecretManagerServiceClient } = require("@google-cloud/secret-manager");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -196,6 +196,12 @@ Return a JSON object with these metrics and their values.`;
     }
 
     await Promise.all(writePromises);
+
+    // Atomic increment of platform-wide counter (safe under concurrent load)
+    await firestore.collection("metrics").doc("global").set(
+      { totalBenchmarksAnalyzed: FieldValue.increment(1) },
+      { merge: true }
+    );
 
     console.log(`Benchmark analysis completed for ${benchmarkId}`);
     res.status(200).json({ ack: true });

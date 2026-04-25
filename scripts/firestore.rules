@@ -2,6 +2,45 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Parts catalog: read-only to authenticated users; refresh-parts SA writes via Admin SDK (rules bypassed).
+    match /parts/{partId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // User-scoped builds and their assessment subcollections.
+    match /users/{uid}/builds/{buildId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update, delete: if request.auth != null && request.auth.uid == uid;
+
+      match /assessments/{assessmentId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        // Server-side analyzers write via Admin SDK; deny client writes.
+        allow write: if false;
+      }
+    }
+
+    // User-scoped benchmarks and assessment subcollections.
+    match /users/{uid}/benchmarks/{benchmarkId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update, delete: if request.auth != null && request.auth.uid == uid;
+
+      match /assessments/{assessmentId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // Platform-wide metrics: readable by any authenticated user; only services write.
+    match /metrics/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Default deny.
     match /{document=**} {
       allow read, write: if false;
     }
