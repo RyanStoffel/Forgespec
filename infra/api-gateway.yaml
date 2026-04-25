@@ -161,3 +161,131 @@ paths:
       responses:
         "204":
           description: CORS preflight
+
+  /builds/{buildId}/analyze:
+    post:
+      operationId: analyzeBuild
+      summary: Re-trigger analyses on an existing build
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "202":
+          description: Accepted
+        "401":
+          description: Unauthorized
+    options:
+      operationId: corsAnalyzeBuild
+      security: []
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204":
+          description: CORS preflight
+
+  /builds/{buildId}/rename:
+    post:
+      operationId: renameBuild
+      summary: Rename a build (POST tunnel for PATCH)
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+    options:
+      operationId: corsRenameBuild
+      security: []
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204":
+          description: CORS preflight
+
+  /builds/{buildId}/delete:
+    post:
+      operationId: deleteBuild
+      summary: Delete a build (POST tunnel for DELETE)
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+    options:
+      operationId: corsDeleteBuild
+      security: []
+      parameters:
+        - in: path
+          name: buildId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://build-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204":
+          description: CORS preflight
+
+  /benchmarks/{benchmarkId}/delete:
+    post:
+      operationId: deleteBenchmark
+      summary: Delete a benchmark (POST tunnel for DELETE)
+      parameters:
+        - in: path
+          name: benchmarkId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://benchmark-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+    options:
+      operationId: corsDeleteBenchmark
+      security: []
+      parameters:
+        - in: path
+          name: benchmarkId
+          required: true
+          type: string
+      x-google-backend:
+        address: https://benchmark-api-5qbytyegcq-uc.a.run.app
+        path_translation: APPEND_PATH_TO_ADDRESS
+      responses:
+        "204":
+          description: CORS preflight

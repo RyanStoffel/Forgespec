@@ -14,10 +14,16 @@ app.get("/parts", async (req, res) => {
 
     let q = db.collection("parts").where("inStock", "==", true);
     if (category) q = q.where("partType", "==", category);
-    q = q.orderBy("price", "asc").limit(100);
+    // Order by sortPrice — it has a sentinel value (1e9) for null-priced parts
+    // so they sort to the end. Ordering by `price` puts NULLs first which
+    // would push real parts past the limit. Index: partType + inStock + sortPrice.
+    q = q.orderBy("sortPrice", "asc").limit(200);
 
     const snap = await q.get();
-    let parts = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Defensive filter: drop parts without a real positive price.
+    let parts = snap.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((p) => typeof p.price === "number" && p.price > 0);
 
     if (search) {
       const s = search.toLowerCase();

@@ -6,11 +6,23 @@ import AuthPage from "./pages/AuthPage";
 import BuilderPage from "./pages/BuilderPage";
 import AnalysisPage from "./pages/AnalysisPage";
 import BenchmarkPage from "./pages/BenchmarkPage";
+import PostFinalizePage from "./pages/PostFinalizePage";
+import ProfilePage from "./pages/ProfilePage";
 
-type Page = "builder" | "analysis" | "benchmark";
+export type Page = "builder" | "post-finalize" | "analysis" | "benchmark" | "profile";
+
+export interface PageContext {
+  buildName?: string;
+  parts?: Record<string, any>;
+  totalPrice?: number;
+  selectedBuildId?: string;
+}
+
+export type NavigateFn = (p: Page, ctx?: PageContext) => void;
 
 export default function App() {
   const [page, setPage] = useState<Page>("builder");
+  const [pageContext, setPageContext] = useState<PageContext>({});
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -26,19 +38,23 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
-  const nav = (p: Page) => {
+  const navigate: NavigateFn = (p, ctx) => {
     setPage(p);
+    setPageContext(ctx ?? {});
     setMobileOpen(false);
   };
 
   if (!authReady) return null;
   if (!user) return <AuthPage />;
 
+  // Top-level nav. "post-finalize" is only reachable from BuilderPage; "profile" via the avatar button on the right.
   const navItems: { key: Page; label: string }[] = [
     { key: "builder", label: "Builder" },
     { key: "analysis", label: "Analysis" },
     { key: "benchmark", label: "Benchmark" },
   ];
+
+  const userInitial = (user.displayName || user.email || "U").charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors">
@@ -47,36 +63,14 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           {/* Logo */}
           <button
-            onClick={() => nav("builder")}
+            onClick={() => navigate("builder")}
             className="flex items-center gap-2 focus:outline-none group"
             aria-label="Home"
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="text-orange-500"
-            >
-              <path
-                d="M12 2L2 7l10 5 10-5-10-5z"
-                fill="currentColor"
-                opacity="0.25"
-              />
-              <path
-                d="M2 17l10 5 10-5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M2 12l10 5 10-5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-orange-500">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.25" />
+              <path d="M2 17l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span className="text-sm font-extrabold tracking-[.18em] text-orange-500 group-hover:text-orange-400 transition-colors">
               FORGESPEC
@@ -88,7 +82,7 @@ export default function App() {
             {navItems.map((n) => (
               <button
                 key={n.key}
-                onClick={() => nav(n.key)}
+                onClick={() => navigate(n.key)}
                 className={`relative px-3.5 py-1.5 text-[13px] font-semibold rounded-md transition-colors focus:outline-none ${
                   page === n.key
                     ? "text-orange-500 bg-orange-500/10 dark:bg-orange-500/10"
@@ -102,7 +96,6 @@ export default function App() {
 
           {/* Right side */}
           <div className="flex items-center gap-2">
-            {/* Theme toggle */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-md text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors focus:outline-none"
@@ -120,11 +113,30 @@ export default function App() {
               )}
             </button>
 
-            {/* User (desktop) */}
             <div className="hidden md:flex items-center gap-2 ml-1 pl-2 border-l border-neutral-200 dark:border-neutral-800">
-              <span className="text-xs text-neutral-400 dark:text-neutral-500 max-w-[140px] truncate">
-                {user.email}
-              </span>
+              <button
+                onClick={() => navigate("profile")}
+                title={user.email ?? "Profile"}
+                aria-label="Open profile"
+                className={`group flex items-center gap-2 pr-2 pl-1 py-1 rounded-full transition-colors focus:outline-none ${
+                  page === "profile"
+                    ? "bg-orange-500/10 ring-1 ring-orange-500/40"
+                    : "hover:bg-neutral-100 dark:hover:bg-neutral-800/60"
+                }`}
+              >
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                    page === "profile"
+                      ? "bg-orange-500 text-white"
+                      : "bg-gradient-to-br from-orange-400 to-orange-600 text-white"
+                  }`}
+                >
+                  {userInitial}
+                </span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 max-w-[140px] truncate group-hover:text-neutral-700 dark:group-hover:text-neutral-200">
+                  {user.email}
+                </span>
+              </button>
               <button
                 onClick={handleLogout}
                 className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-red-500 dark:hover:text-red-400 transition-colors px-2 py-1 rounded focus:outline-none"
@@ -133,7 +145,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Mobile hamburger */}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="md:hidden p-2 -mr-2 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 focus:outline-none"
@@ -148,13 +159,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile menu */}
         {mobileOpen && (
           <div className="md:hidden border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-4 pb-4 pt-2 space-y-0.5">
             {navItems.map((n) => (
               <button
                 key={n.key}
-                onClick={() => nav(n.key)}
+                onClick={() => navigate(n.key)}
                 className={`w-full text-left px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${
                   page === n.key
                     ? "text-orange-500 bg-orange-500/10"
@@ -165,7 +175,17 @@ export default function App() {
               </button>
             ))}
             <div className="border-t border-neutral-200 dark:border-neutral-800 mt-2 pt-3 flex items-center justify-between">
-              <span className="text-xs text-neutral-400 truncate">{user.email}</span>
+              <button
+                onClick={() => navigate("profile")}
+                className="flex items-center gap-2 text-left flex-1 min-w-0"
+              >
+                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                  {userInitial}
+                </span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                  {user.email}
+                </span>
+              </button>
               <button
                 onClick={handleLogout}
                 className="text-xs text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors px-2 py-1 rounded"
@@ -178,9 +198,11 @@ export default function App() {
       </nav>
 
       <main>
-        {page === "builder" && <BuilderPage />}
-        {page === "analysis" && <AnalysisPage />}
+        {page === "builder" && <BuilderPage navigate={navigate} />}
+        {page === "post-finalize" && <PostFinalizePage navigate={navigate} ctx={pageContext} />}
+        {page === "analysis" && <AnalysisPage selectedBuildId={pageContext.selectedBuildId} />}
         {page === "benchmark" && <BenchmarkPage />}
+        {page === "profile" && <ProfilePage navigate={navigate} />}
       </main>
     </div>
   );
